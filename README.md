@@ -1,7 +1,6 @@
 # IPO-Mine: A Toolkit and Dataset for Section-Structured Analysis of Long, Multimodal IPO Documents
 
-[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)]([https://huggingface.co/datasets](https://huggingface.co/datasets/gtfintechlab/ipo-images))
- [![CC BY 4.0][cc-by-shield]][cc-by]
+[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)](https://huggingface.co/datasets/gtfintechlab/ipo-images) [![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/) [![CC BY 4.0][cc-by-shield]][cc-by]
 
 This work is licensed under a
 [Creative Commons Attribution 4.0 International License][cc-by].
