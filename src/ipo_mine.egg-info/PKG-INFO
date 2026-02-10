@@ -1,0 +1,150 @@
+Metadata-Version: 2.4
+Name: ipo-mine
+Version: 0.0.0
+Summary: Mining and parsing S-1 IPO filings
+Author: Michael Galarnyk
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: pandas>=1.5
+Requires-Dist: numpy>=1.21
+Requires-Dist: beautifulsoup4>=4.11
+Requires-Dist: lxml>=4.9
+Requires-Dist: requests>=2.28
+Requires-Dist: fuzzywuzzy>=0.18.0
+Requires-Dist: python-levenshtein
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: jupyter; extra == "dev"
+
+# IPO-Mine: S-1 (IPO) Filings Toolkit
+
+GitHub Repository: https://github.com/gtfintechlab/S1-Filings  
+Project Website: https://ipo-mine.web.app/
+
+## Overview
+
+IPO-Mine is a Python package for downloading, parsing, and structuring S-1 IPO filings from the U.S. Securities and Exchange Commission (SEC) EDGAR system.
+
+This repository implements the data processing pipeline used to construct the IPO-Mine dataset, a section-structured corpus introduced in the research paper:
+
+IPO-Mine: A Section-Structured Dataset for Analyzing Long and Complex IPO Filings
+
+The objective of this project is to transform raw SEC filings into clean, standardized, and section-aligned textual representations suitable for large-scale analysis in natural language processing, information retrieval, and long-document modeling.
+
+## Motivation
+
+S-1 filings are among the most complex regulatory documents used in empirical research. They exhibit several challenges:
+
+- Extreme document length, often exceeding 100–300 pages
+- Substantial variation in section headers across firms and time
+- Heterogeneous formats, including HTML, plain text, and scanned images
+- Limited structural consistency despite regulatory guidance
+
+These characteristics complicate tasks such as section segmentation, cross-firm comparison, longitudinal analysis, and long-context modeling.
+
+IPO-Mine addresses these challenges by providing a unified and reproducible pipeline that converts raw EDGAR filings into structured, research-ready data.
+
+## Features
+
+- Automated downloading of S-1 and S-1/A filings from SEC EDGAR
+- Parsing of Tables of Contents (TOCs) for filings dating back to 1997
+- Extraction and normalization of key IPO sections, including:
+  - Risk Factors
+  - Business
+  - Use of Proceeds
+  - Management’s Discussion and Analysis (MD&A)
+  - Financial Statements
+- Support for multiple filing formats:
+  - HTML
+  - plain text
+  - image-based filings via OCR
+- Fuzzy matching of section headers using global section mappings
+- Deterministic outputs suitable for reproducible dataset construction
+
+## IPO-Mine Dataset
+
+Using this toolkit, the IPO-Mine dataset is constructed as a large-scale corpus of IPO filings with:
+
+- Section-aligned text across firms
+- Standardized section nomenclature
+- Clean document boundaries
+- Compatibility with long-document modeling and retrieval frameworks
+
+Additional details and examples are available at:
+
+https://ipo-mine.web.app/
+
+## Installation
+
+The package is available on PyPI under the name `ipo-mine`.
+
+```
+pip install ipo-mine
+```
+
+## OCR Dependency
+
+Parsing image-based filings requires a local installation of Tesseract OCR.
+
+### Tesseract Installation
+
+| Operating System | Installation Method |
+|------------------|---------------------|
+| macOS | `brew install tesseract` |
+| Ubuntu / Debian | `sudo apt install tesseract-ocr` |
+| Windows | UB Mannheim Tesseract installer |
+| Conda environments | Included automatically |
+
+## Example Usage
+
+```python
+from ipo_mine.download.company import Company
+from ipo_mine.download import S1Downloader
+from ipo_mine.parse.s1_parser import S1Parser
+from ipo_mine.resources import GLOBAL_SECTIONS_JSON
+from ipo_mine.utils.config import PARSED_DIR
+
+downloader = S1Downloader(
+    email="your_email@domain.com",
+    company="Your Institution"
+)
+
+ticker = "SNOW"
+filing = downloader.download_s1(Company.from_ticker(ticker))
+
+parser = S1Parser(
+    filing=filing,
+    mappings_path=GLOBAL_SECTIONS_JSON,
+    output_base_path=PARSED_DIR
+)
+
+risk_factors = parser.parse_section("Risk Factors", ticker)
+```
+
+## Research-Oriented Design
+
+This library is designed primarily for dataset construction and reproducible empirical research rather than ad-hoc scraping.
+
+Typical use cases include:
+
+- Building section-aligned IPO corpora
+- Comparing disclosure language across firms and time
+- Training and evaluation of long-document language models
+- Large-scale studies of regulatory disclosures
+
+## Citation
+
+If you use this package or the IPO-Mine dataset in your research, please cite:
+
+```
+@inproceedings{ipomine2025,
+  title     = {IPO-Mine: A Section-Structured Dataset for Analyzing Long and Complex IPO Filings},
+  author    = {Author names},
+  booktitle = {Proceedings of the ACM SIGKDD Conference},
+  year      = {2025}
+}
+```
+
+## License
+
+This project is released under the MIT License.

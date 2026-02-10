@@ -1,0 +1,80 @@
+# =============================================================================
+# S1-Filings: Conda Environment
+# -----------------------------------------------------------------------------
+# This environment file creates a ready-to-use setup for working with
+# the s1-filings toolkit, including:
+#   - OCR stack (Tesseract binary + Python wrapper)
+#   - Jupyter notebook support
+#   - Editable local installation for development
+#
+# Usage:
+#   conda env create -f environment.yaml
+#   conda activate s1-filings
+# =============================================================================
+
+name: s1-filings
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # ---------------------------------------------------------------------------
+  # Python & base
+  # ---------------------------------------------------------------------------
+  - python=3.10
+  - pip
+
+  # ---------------------------------------------------------------------------
+  # Core dependencies (match pyproject.toml)
+  # ---------------------------------------------------------------------------
+  - requests>=2.28        # SEC downloads
+  - beautifulsoup4>=4.11  # HTML parsing
+  - lxml>=4.9             # Fast XML/HTML parsing
+  - pandas>=1.5           # Table/data handling
+  - fuzzywuzzy>=0.18.0    # Fuzzy section name matching
+  - python-levenshtein    # Speeds up fuzzywuzzy
+
+  # ---------------------------------------------------------------------------
+  # Jupyter stack
+  # ---------------------------------------------------------------------------
+  - jupyterlab>=4.0       # Notebook UI
+  - ipykernel>=6.0        # Kernel visible in JupyterLab
+
+  # ---------------------------------------------------------------------------
+  # OCR stack (binary + runtime)
+  # ---------------------------------------------------------------------------
+  # These come from conda-forge, which provides the *actual tesseract binary*.
+  # pytesseract (the Python wrapper) will call this binary under the hood.
+  # No need for `tesseract-data` — it's included automatically in conda-forge builds.
+  - numpy>=1.21
+  - opencv                # OpenCV from conda; avoids pip wheel headaches
+  - tesseract             # Actual OCR engine binary (installs English data by default)
+  # Optional: install extra language packs if needed
+  # - tesseract-lang       # or tesseract-lang-eng/deu/etc., depending on conda-forge naming
+
+  # ---------------------------------------------------------------------------
+  # Install your package in editable mode (local development)
+  # ---------------------------------------------------------------------------
+  - pip:
+      - "thefuzz[speedup]>=0.22.1"
+      # Python wrapper for the OCR engine
+      - pytesseract
+      # Editable install of this repo (so local changes are reflected immediately)
+      - -e .
+
+# -----------------------------------------------------------------------------
+# Notes:
+# -----------------------------------------------------------------------------
+# • Conda users get the Tesseract binary automatically.
+#   No manual brew/apt install required.
+#
+# • pip-only users must manually install the binary:
+#     macOS  →  brew install tesseract
+#     Ubuntu →  sudo apt install tesseract-ocr
+#     Windows →  Install from UB Mannheim build (GitHub Wiki)
+#
+# • This environment ensures your notebooks (scripts/) can run imports like:
+#     from s1_filings.downloader import S1Downloader
+#   without any sys.path hacks.
+# -----------------------------------------------------------------------------

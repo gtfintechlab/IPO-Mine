@@ -1,0 +1,11 @@
+pandas>=1.5
+numpy>=1.21
+beautifulsoup4>=4.11
+lxml>=4.9
+requests>=2.28
+fuzzywuzzy>=0.18.0
+python-levenshtein
+
+[dev]
+pytest
+jupyter

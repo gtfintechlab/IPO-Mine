@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipo-mine"
+version = "0.0.0"
+description = "Mining and parsing S-1 IPO filings"
+readme = "README.md"
+requires-python = ">=3.9"
+
+authors = [
+    { name = "Michael Galarnyk" }
+]
+
+dependencies = [
+    "pandas>=1.5",
+    "numpy>=1.21",
+    "beautifulsoup4>=4.11",
+    "lxml>=4.9",
+    "requests>=2.28",
+    "fuzzywuzzy>=0.18.0",
+    "python-levenshtein",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "jupyter",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
