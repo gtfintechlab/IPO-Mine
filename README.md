@@ -33,33 +33,20 @@ pip install ipo-mine
 ## Using `ipo-mine` to Download an IPO Filing
 
 ```python
-from download import IPODownloader, Company
+from ipo_mine import IPODownloader, Company
 
-downloader = IPODownloader(
-    email="example@gmail.com",
-    company="Your Example Organization"
-)
-
-company = Company.from_ticker("SNOW")
-
-company_filings = downloader.download_ipo(
-    company,
-    limit=1,
-    save_filing=True,
-    save_images=False,
-    verbose=True
-)
-
-filing = company_filings.filings[0]
+dl = IPODownloader("<email>", "<company>")
+uber = Company.from_ticker("UBER")
+filing = dl.download_ipo(uber)
 ```
 
-## Parsing the  Table of Contents
+## Parsing the Risk Factors section
 
 ```python
-results = parser.parse_company(
-    ticker="SNOW",
-    validate=False
-)
+from ipo_mine import IPOParser
+
+parser = IPOParser(filing)
+risk_factors = parser.parse_section("Risk Factors")
 ```
 
 ## Notes
