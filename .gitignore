@@ -64,6 +64,7 @@ company_tickers_to_cik.csv
 # ============================================
 *.egg-info/*
 src/s1_filings.egg-info/
+src/ipo_mine.egg-info/
 # No python notebooks inside the src/
 src/**/*.ipynb
 
