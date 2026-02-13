@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Any, List, Union, Optional, Tuple
 from collections import defaultdict
-from entities import S1Filing, S1FilingImage, CompanyFilings, Filing, FilingImage, FormType
+from ..entities import S1Filing, S1FilingImage, CompanyFilings, Filing, FilingImage, FormType
 import random
 
 class Dataset:

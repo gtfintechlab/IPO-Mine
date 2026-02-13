@@ -20,8 +20,8 @@ from dataclasses import asdict
 
 # Project-aware default raw directory that works from notebooks too.
 # RAW_DIR should point to <repo>/data/raw via utils.config logic.
-from utils.config import RAW_DIR
-from entities import S1Filing, S1FilingImage, CompanyFilings, FormType, Filing, FilingImage
+from ..utils.config import RAW_DIR
+from ..entities import S1Filing, S1FilingImage, CompanyFilings, FormType, Filing, FilingImage
 
 if TYPE_CHECKING:
     # Only imported for static type checking (mypy/pyright/IDE); not at runtime.
@@ -169,7 +169,8 @@ class IPODownloader:
                         primary_document=response_data['primaryDocument'][i],
                         filing_url=filing_url,
                         local_path=None,
-                        images=[]
+                        images=[],
+                        cik=str(cik)
                     ))
 
         if not ipo_filings:
@@ -331,7 +332,7 @@ class IPODownloader:
 
 if __name__ == "__main__":
     # CLI demo (defaults to RAW_DIR if download_dir is omitted).
-    from download.company import Company  # local import to avoid import-time cycles
+    from .company import Company  # local import to avoid import-time cycles
 
     downloader = S1Downloader(
         email="you@example.com",

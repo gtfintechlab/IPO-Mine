@@ -13,5 +13,6 @@ class Filing:
 
     local_path: Optional[str]
     images: List[FilingImage]
-
+    
+    cik: Optional[str] = None
     raw_content: Optional[str] = None

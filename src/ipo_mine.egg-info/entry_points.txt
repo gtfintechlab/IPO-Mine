@@ -1,0 +1,2 @@
+[console_scripts]
+ipo-mine = ipo_mine.cli:main

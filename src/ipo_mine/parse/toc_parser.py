@@ -1,9 +1,18 @@
 from bs4 import BeautifulSoup, Tag
 from collections import OrderedDict # not necessary after we fix the parser
 import glob
+import json
 import re
 from typing import Optional, Callable, Dict, List, Tuple
-from utils.config import print_config, RAW_DIR, OUTPUT_DIR, PARSED_DIR, set_data_root
+from parse.section_parser import create_pages_dict
+from ..utils.config import print_config, RAW_DIR, OUTPUT_DIR, PARSED_DIR, set_data_root
+
+# Try to use lxml parser for BeautifulSoup (5-10x faster than html.parser)
+try:
+    import lxml
+    _BS_PARSER = "lxml"
+except ImportError:
+    _BS_PARSER = "html.parser"
 
 # Page tokens at end of TOC rows:
 #   - Arabic numbers: "93"
@@ -26,8 +35,59 @@ DASH_TRANSLATION = str.maketrans({
 # Junk guard: EIN often shows up in header tables near the TOC
 EIN_RE = re.compile(r"\b\d{2}-\d{7}\b")
 
+# Header pattern for ASCII fallback
+HEADER_RE = re.compile(r"""
+^(?![ \t]*(?:PAGE|<PAGE|TABLE[ \t]+OF[ \t]+CONTENTS|INDEX)\b)
+(?P<l1>
+    [ \t]*                                         # allow any indentation (or none)
+    [A-Za-z0-9][A-Za-z0-9&''.,()\/\-]*              # first token
+    (?:[ \t]+[A-Za-z0-9][A-Za-z0-9&''.,()\/\-]*){0,20}
+    [ \t]*$
+)
+(?:\n
+    (?![ \t]*$)                                    # MUST be immediately next line (no blank)
+    (?P<l2>
+        [ \t]*
+        [A-Za-z0-9][A-Za-z0-9&''.,()\/\-]*
+        (?:[ \t]+[A-Za-z0-9][A-Za-z0-9&''.,()\/\-]*){0,20}
+        [ \t]*$
+    )
+)?
+""", re.MULTILINE | re.VERBOSE)
+
+
 # If we’re in the MAIN TOC (not reading body content), a purely numeric page this large is nonsense (e.g., “3600”)
 MAX_REASONABLE_PAGE = 1000
+HEADER_LIMIT = 200
+MIN_STRIPPED_TEXT_LEN = 11000
+
+CANONICAL_SECTION_NAMES = [
+    "about this prospectus",
+    "available information",
+    "business",
+    "capitalization",
+    "certain relationships and related transactions",
+    "description of capital stock",
+    "dilution",
+    "experts",
+    "financial statements",
+    "index to consolidated financial statements",
+    "legal matters",
+    "management",
+    "management's discussion and analysis of financial condition and results of operations",
+    "market and industry data",
+    "principal and selling stockholders",
+    "plan of distribution",
+    "prospectus summary",
+    "risk factors",
+    "selected financial data",
+    "selling stockholders",
+    "underwriting",
+    "use of proceeds",
+    "where you can find additional information"
+]
+
+
 
 def _norm(s: str) -> str:
     """Whitespace + dash normalization and removal of trailing dot leaders."""
@@ -194,15 +254,39 @@ def _has_link_only_toc(soup: BeautifulSoup) -> bool:
         upper = sum(ch.isupper() for ch in t)
         return upper / max(1, letters) < 0.70
 
-    # 1) Find a non-navigation TOC header
+    # 1) Find a non-navigation TOC header via string search (faster than iterating all tags)
     hdr = None
-    for cand in soup.find_all(_is_toc_header):
+    import re
+    toc_regex = re.compile(r"table\s+of\s+contents", re.IGNORECASE)
+    
+    # Search text nodes first
+    for text_node in soup.find_all(string=toc_regex):
+        cand = text_node.parent
+        if not isinstance(cand, Tag):
+            continue
+            
+        # Walk up to find a block-level or header candidate if current is inline
+        steps = 0
+        while steps < 3 and cand.name in {"b", "strong", "i", "em", "font", "span", "a"}:
+            if cand.parent and isinstance(cand.parent, Tag):
+                cand = cand.parent
+                steps += 1
+            else:
+                break
+        
+        if cand.name not in {"p","div","h1","h2","h3","h4","h5","h6","td"}:
+            continue
+            
+        # Now validate logic
         if _is_toc_nav_link(cand):
             continue
         if cand.parent and isinstance(cand.parent, Tag) and _is_toc_nav_link(cand.parent):
             continue
-        if len(cand.get_text(" ", strip=True)) > 100:
+            
+        txt_len = len(cand.get_text(" ", strip=True))
+        if txt_len > 100:
             continue
+            
         hdr = cand
         break
     if not hdr:
@@ -595,7 +679,7 @@ def parse_toc_from_risk_factors_style(raw_content: str) -> OrderedDict:
         OrderedDict {section → page}
         since actual page numbers aren't available from the content.
     """
-    soup = BeautifulSoup(raw_content, 'html.parser')
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
     
     # Step 1: Find the Risk Factors header
     risk_factors_tag = _find_risk_factors_header(soup)
@@ -647,13 +731,11 @@ def parse_toc_2015_2025(
         Empty OrderedDict indicates a short / partial / omitted filing.
     """
 
-    MIN_STRIPPED_TEXT_LEN = 11000
-
     # --- Structural soup (DO NOT MUTATE) ---
-    soup = BeautifulSoup(raw_content, "html.parser")
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
 
     # --- Narrative-text soup (SAFE TO MUTATE) ---
-    text_soup = BeautifulSoup(raw_content, "html.parser")
+    text_soup = BeautifulSoup(raw_content, _BS_PARSER)
     for tag in text_soup(["table", "script", "style", "noscript"]):
         tag.decompose()
 
@@ -723,8 +805,176 @@ def parse_toc_2015_2025(
     # Normalize tiny / missing TOCs to empty
     return OrderedDict()
 
+def parse_toc_2018(
+    raw_content: str,
+    return_dict: bool = True,
+    use_fallback: bool = True,
+):
+    """
+    Comparison-isolated parser for 2018 filings.
+    Starts as a clone of parse_toc_2015_2025 but will be modified for 2018-specific issues.
+    """
+    # --- Structural soup (DO NOT MUTATE) ---
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
+
+    # --- Narrative-text soup (SAFE TO MUTATE) ---
+    text_soup = BeautifulSoup(raw_content, _BS_PARSER)
+    for tag in text_soup(["table", "script", "style", "noscript"]):
+        tag.decompose()
+
+    text = text_soup.get_text(" ", strip=True)
+    text_lower = text.lower()
+
+    # Only inspect the beginning of the filing to avoid false positives
+    top = text_lower[:8000]
+
+    OMISSION_PHRASES = (
+        "therefore been omitted",
+        "has been omitted",
+        "have been omitted",
+        "solely to file certain exhibits"
+    )
+
+    has_omission = any(p in top for p in OMISSION_PHRASES)
+
+    # Early exit 1: genuinely short filings (after removing tables)
+    if len(text) < MIN_STRIPPED_TEXT_LEN:
+        return OrderedDict()
+
+    # Early exit 2: explicit omission of substantive content
+    if has_omission:
+        return OrderedDict()
+    
+    # Check for link-only TOC
+    if _has_link_only_toc(soup):
+        return OrderedDict()
+
+    # --- Normal TOC parsing (uses untouched soup) ---
+    toc_tables = _find_toc_tables_block(soup)
+    if not toc_tables:
+        # As a last resort, scan the whole doc (rare)
+        toc_tables = soup.find_all("table")
+
+    rows: list[tuple[str, str]] = []
+    for tbl in toc_tables:
+        for tr in tbl.find_all("tr", recursive=True):
+            title, page = _row_to_title_page(tr)
+            if title and page:
+                rows.append((title, page))
+
+    # De-dup while keeping first occurrence
+    seen, ordered = set(), []
+    for t, p in rows:
+        if t not in seen:
+            seen.add(t)
+            ordered.append((t, p))
+
+    # Normal success
+    if len(ordered) >= 4:
+        return OrderedDict(ordered)
+
+    # Fallback parser
+    if use_fallback:
+        fallback_result = parse_toc_from_risk_factors_style(raw_content)
+        if fallback_result and len(fallback_result) >= 4:
+            return fallback_result
+
+    return OrderedDict()
+
+def parse_toc_2017(
+    raw_content: str,
+    return_dict: bool = True,
+    use_fallback: bool = True,
+):
+    """
+    Comparison-isolated parser for 2018 filings.
+    Starts as a clone of parse_toc_2015_2025 but will be modified for 2018-specific issues.
+    """
+    # --- Structural soup (DO NOT MUTATE) ---
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
+
+    # --- Narrative-text soup (SAFE TO MUTATE) ---
+    text_soup = BeautifulSoup(raw_content, _BS_PARSER)
+    for tag in text_soup(["table", "script", "style", "noscript"]):
+        tag.decompose()
+
+    text = text_soup.get_text(" ", strip=True)
+    text_lower = text.lower()
+
+    # Only inspect the beginning of the filing to avoid false positives
+    top = text_lower[:8000]
+
+    OMISSION_PHRASES = (
+        "therefore been omitted",
+        "has been omitted",
+        "have been omitted",
+        "solely to file certain exhibits"
+    )
+
+    has_omission = any(p in top for p in OMISSION_PHRASES)
+
+    # Early exit 1: genuinely short filings (after removing tables)
+    if len(text) < MIN_STRIPPED_TEXT_LEN:
+        return OrderedDict()
+
+    # Early exit 2: explicit omission of substantive content
+    if has_omission:
+        return OrderedDict()
+    
+    # Check for link-only TOC
+    if _has_link_only_toc(soup):
+        return OrderedDict()
+
+    # --- Normal TOC parsing (uses untouched soup) ---
+    toc_tables = _find_toc_tables_block(soup)
+    if not toc_tables:
+        # As a last resort, scan the whole doc (rare)
+        toc_tables = soup.find_all("table")
+
+    rows: list[tuple[str, str]] = []
+    for tbl in toc_tables:
+        for tr in tbl.find_all("tr", recursive=True):
+            title, page = _row_to_title_page(tr)
+            if title and page:
+                rows.append((title, page))
+
+    # De-dup while keeping first occurrence
+    seen, ordered = set(), []
+    for t, p in rows:
+        if t not in seen:
+            seen.add(t)
+            ordered.append((t, p))
+
+    # Normal success
+    if len(ordered) >= 4:
+        return OrderedDict(ordered)
+
+    # Fallback parser
+    if use_fallback:
+        fallback_result = parse_toc_from_risk_factors_style(raw_content)
+        if fallback_result and len(fallback_result) >= 4:
+            return fallback_result
+
+    return OrderedDict()
+
 def parse_toc_plain_text(content):
     left_last_numeric_page, right_last_numeric_page = None, None
+    # --- Patterns ---
+    ROMAN = r'[ivxlcdmIVXLCDM()]{1,10}'
+    PAGE  = rf'([A-Z]-?(?:\d{{1,3}}|{ROMAN})|\d{{1,3}}|{ROMAN})'
+    entry_re = re.compile(rf'^(.*?)\s*(?:[.\s]{{2,}})\s*{PAGE}(?:\s+.*)?$', re.I)
+    num_re          = re.compile(r'^\d{1,3}$')
+    alpha_re        = re.compile(r'^[A-Z]-?\d{1,3}$', re.I)
+    roman_re        = re.compile(ROMAN)
+    two_col_split_re = re.compile(
+        rf'^(.+?)(?:[.\s]{{2,}})\s*{PAGE}\s{{2,}}(.+)$',
+        re.I
+    )
+    toc_header_re = re.compile(r"TABLE OF CONTENTS|Table of Contents|Table of contents")
+    # Ignore terms for multi-page TOCs
+    ignore_terms = ("<PAGE>", "<TABLE>", "<CAPTION>", "<C>", "</PAGE>", "</TABLE>", "PAGE", "NO.")
+
+    # --- Helpers ---
     def add_entry_tc(title: str, page: str, curr_entries: list, on_left_side: bool) -> bool:
         """
         Append (title, page) to curr_entries.
@@ -743,7 +993,7 @@ def parse_toc_plain_text(content):
         if not title:
             return False
 
-        if len(title) >= header_limit:
+        if len(title) >= HEADER_LIMIT:
             return True
 
         if kind == "num":
@@ -819,8 +1069,6 @@ def parse_toc_plain_text(content):
                 if mr:
                     r_title, r_page = mr.group(1).strip(), mr.group(2).strip()
 
-                    # ✅ KEY FIX: if right title was buffered from previous line,
-                    # treat this right entry as the continuation and prepend it.
                     if right_buffer:
                         r_title = " ".join(right_buffer + [r_title]).strip()
                         right_buffer.clear()
@@ -876,41 +1124,9 @@ def parse_toc_plain_text(content):
 
         return left_entries + right_entries
 
-
-
-    # --- Locate TOC region ---
-    table_idx = content.find('TABLE OF CONTENTS')
-    table_idx = table_idx if table_idx != -1 else content.find('Table of Contents')
-    table_idx = table_idx if table_idx != - 1 else content.find('Table of contents')
-    if table_idx == -1:
-        print('[ERROR]: Could not locate table of contents')
-
-    toc = content[table_idx:]
-    c_idx = toc.find('<C>')
-    if c_idx != -1 and c_idx < 500:
-        toc = toc[c_idx:].strip()
-
-    lines = toc.splitlines()[1:]
-    header_limit = 150
-    entries, buffer = [], []
-    two_column = False
-
-    # --- Patterns ---
-    ROMAN = r'[ivxlcdmIVXLCDM()]{1,10}'
-    PAGE  = rf'([A-Z]-?(?:\d{{1,3}}|{ROMAN})|\d{{1,3}}|{ROMAN})'
-    entry_re = re.compile(rf'^(.*?)\s*(?:[.\s]{{2,}})\s*{PAGE}(?:\s+.*)?$', re.I)
-    big_gap_re      = re.compile(r'^(.*?)\s{8,}(\S.*)$')
-    right_head_page = re.compile(rf'^{PAGE}\b', re.I)
-    num_re          = re.compile(r'^\d{1,3}$')
-    alpha_re        = re.compile(r'^[A-Z]-?\d{1,3}$', re.I)
-    roman_re        = re.compile(ROMAN)
-    two_col_split_re = re.compile(
-        rf'^(.+?)(?:[.\s]{{2,}})\s*{PAGE}\s{{2,}}(.+)$',
-        re.I
-    )
-
-    # Ignore terms for multi-page TOCs
-    ignore_terms = ("<PAGE>", "<TABLE>", "<CAPTION>", "<C>", "</PAGE>", "</TABLE>", "PAGE", "NO.", "----")
+    if len(content) <= MIN_STRIPPED_TEXT_LEN:
+        print("[ERROR] Cannot parse, filing is likely a short amendment.")
+        return {}
 
     def page_kind(p: str):
         if num_re.match(p):
@@ -932,7 +1148,9 @@ def parse_toc_plain_text(content):
         if not kind:
             return False  # ignore invalid page
         title = (" ".join(buffer + [left])).strip() if buffer else left.strip()
-        if len(title) >= header_limit:
+        if left.strip().lower() in CANONICAL_SECTION_NAMES:
+            title = left
+        if len(title) >= HEADER_LIMIT:
             return True
         if not title:
             return False
@@ -944,78 +1162,213 @@ def parse_toc_plain_text(content):
         curr_entries.append((title, page))
         buffer.clear()
         return False
-
-    # --- Parse ---
-    for raw in lines:
-        # Subsection entry check
-        if entry_re.search(raw) and raw.startswith((" ", "\t")) and buffer == []:
-            continue
-        s = raw.strip()
-        if not s:
-            continue
-        # Ignoring gaps between pages
-        if any(term.lower() in s.lower() for term in ignore_terms):
-            continue
-        # Check for two-column
-        tc = two_col_split_re.match(s)
-        if tc:
-            two_column = True
-            break
-
-        # 1) Normal entry (dots or spaces before page)
-        m = entry_re.match(s)
-        if m:
-            left, page = m.group(1).strip(), m.group(2).strip()
-            if add_entry(left, page, entries):
+    
+    def parse_toc_ascii_table(table_idx):
+        num_bad_entries = 0
+        nonlocal fallback_used
+        toc = content[table_idx:]
+        c_idx = toc.find('<C>')
+        if c_idx != -1 and c_idx < 500:
+            toc = toc[c_idx:].strip()
+        lines = toc.splitlines()[1:]
+        entries = []
+        two_column = False
+        # Check if the entire TOC is indented
+        num_no_leading_whitespace_cont = 0
+        for raw in lines:
+            if raw.startswith((" ", "\t")) or not raw.strip():
+                num_no_leading_whitespace_cont += 1
+            else:
                 break
-            continue
+        # --- Parse ---
+        for index, raw in enumerate(lines):
+            s = raw.strip()
+            if not s:
+                continue
+            # Subsection entry check
+            m = entry_re.match(s)
+            if m and raw.startswith((" ", "\t")) and buffer == [] and num_no_leading_whitespace_cont < 5:
+                header = m.group(1).strip().strip().lower()
+                if header in CANONICAL_SECTION_NAMES:
+                    pass
+                else:
+                    continue
+            # Ignoring gaps between pages
+            if any(term.lower() in s.lower() for term in ignore_terms) or re.match(r"^(?=.*-)[ \t-]+$", s):
+                continue
 
-        # 2) Big-gap two-column layout
-        mg = big_gap_re.match(s)
-        if mg:
-            left, right = mg.groups()
-            left, right = left.rstrip(), right.strip()
-            mh = right_head_page.match(right)
-            if mh:
-                page = mh.group(1)
+            # Check for two-column
+            tc = two_col_split_re.match(s)
+            if tc and index == 0:
+                two_column = True
+                break
+            # 1) Normal entry (dots or spaces before page)
+            if m:
+                left, page = m.group(1).strip(), m.group(2).strip()
                 if add_entry(left, page, entries):
                     break
                 continue
-            # otherwise it’s a wrapped title fragment
-            if left.strip():
-                buffer.append(left.strip())
-            continue
-        # 3) Plain wrapped title continuation
-        buffer.append(s)
-        if len(buffer) > 20:
-            break
-    if two_column:
-        entries = parse_two_column_toc_lines(lines, entry_re, PAGE, ignore_terms)
-        return dict(entries)
-    # Final: if buffer itself is "title + page", parse it under the same rule
-    if buffer:
-        candidate = " ".join(buffer).strip()
-        m_last = entry_re.match(candidate)
-        if m_last:
-            left, page = m_last.group(1).strip(), m_last.group(2).strip()
-            if len(left) <= header_limit:
-                # apply same monotonic stop check
-                kind = page_kind(page)
-                if kind == 'num':
-                    n = int(page)
-                    print(last_numeric_page)
-                    if last_numeric_page is None or n < last_numeric_page:
-                        entries.append((left, page))
-                elif kind == 'alpha':
-                    entries.append((left, page))
-            
-    return dict(entries)
 
+            # 2) Plain wrapped title continuation
+            if s.count('.') >= 5:
+                num_bad_entries += 1 + len(buffer)
+                buffer.clear()
+                continue
+            buffer.append(s)
+            if len(buffer) + num_bad_entries > 20:
+                break
+            
+        if two_column:
+            entries = parse_two_column_toc_lines(lines, entry_re, PAGE, ignore_terms)
+            if entries == []:
+                print('[WARN] TOC parser empty. Going to fallback...')
+                return ascii_toc_fallback(content)
+            return dict(entries)
+        
+        # Final: if buffer itself is "title + page", parse it under the same rule
+        if buffer:
+            candidate = " ".join(buffer).strip()
+            m_last = entry_re.match(candidate)
+            if m_last:
+                left, page = m_last.group(1).strip(), m_last.group(2).strip()
+                if len(left) <= HEADER_LIMIT:
+                    # apply same monotonic stop check
+                    kind = page_kind(page)
+                    if kind == 'num':
+                        n = int(page)
+                        if last_numeric_page is None or n < last_numeric_page:
+                            entries.append((left, page))
+                    elif kind == 'alpha':
+                        entries.append((left, page))
+
+        if entries == [] and not fallback_used:
+            print('[WARN] TOC parser empty. Going to fallback...')
+            fallback_used = True
+            return ascii_toc_fallback(content)
+        return dict(entries)
+    # --- Main Body ---
+    
+    # --- Locate TOC region ---
+    table_indices = list(re.finditer(toc_header_re, content))
+    if not table_indices:
+        print('[WARN] TOC parser empty. Going to fallback...')
+        return ascii_toc_fallback(content)
+    
+    buffer, toc = [], {}
+    fallback_used = False
+    for match in table_indices:
+        table_idx = match.start()
+        found_table = parse_toc_ascii_table(table_idx)
+        for header, page_num in found_table.items():
+            norm_new_header = header.lower().strip()
+            norm_toc_headers = {header.lower().strip() : header for header in toc}
+            if norm_new_header in norm_toc_headers:
+                existing_header = norm_toc_headers[norm_new_header]
+                if page_kind(page_num) == "num" and page_kind(toc[existing_header]) == "alpha":
+                    toc.pop(existing_header)
+                    toc[header] = page_num
+                elif "~" in toc[existing_header] and "~" not in page_num:
+                    toc.pop(existing_header)
+                    toc[header] = page_num
+            else:
+                toc[header] = page_num
+        buffer = []
+
+    if not validate_toc(toc):
+        print("[WARN] Parsed TOC does not contain any req'd sections. Attempting fallback...")
+        fallback = ascii_toc_fallback(content)
+        toc.update({k: v for k, v in fallback.items() if k not in toc})
+
+
+    if toc == {}:
+        print("[ERROR] Unable to parse TOC. Check if document has any required section headers.")
+
+    return toc
+
+def validate_toc(toc: dict) -> bool:
+    for key in toc.keys():
+        if key.strip().lower() in CANONICAL_SECTION_NAMES:
+            return True
+    return False
+
+def ascii_toc_fallback(raw_content):
+    fallback_toc = {}
+    pages_dict = create_pages_dict(raw_content, "txt")
+
+    if pages_dict == {} or min([int(page) for page in pages_dict.keys()]) >= 1000:
+        print("[WARN] No page numbers found. Using secondary fallback...")
+        return ascii_toc_secondary_fallback(raw_content)
+   
+    for page, page_content in pages_dict.items():
+        for m in HEADER_RE.finditer(page_content):
+            header = m.group("l1").strip()
+            if m.group("l2"):
+                header += " " + m.group("l2").strip()
+            cleaned_input = header.lower().strip()
+
+            if cleaned_input in CANONICAL_SECTION_NAMES and len(cleaned_input) <= HEADER_LIMIT:
+                for key in fallback_toc.keys():
+                    if key.lower() == cleaned_input:
+                        del fallback_toc[key]
+                        break
+                fallback_toc[re.sub(r"'S\b", "'s", header.title())] = page
+    if fallback_toc == {}:
+        print("[ERROR] Unable to parse TOC. Did not locate any section headers.")
+    return fallback_toc
+
+def ascii_toc_secondary_fallback(raw_content):
+    fallback_toc = {}
+    PAGE_TAG_RE = re.compile('<PAGE>')
+    matches = PAGE_TAG_RE.finditer(raw_content)
+    end_indices = [m.end() for m in matches]
+    if end_indices == []:
+        print("[WARN] No <PAGE> tags found. Using tertiary fallback...")
+        return ascii_toc_tertiary_fallback(raw_content)
+    matches = HEADER_RE.finditer(raw_content)
+        
+    for m in matches:
+        header = m.group("l1").strip()
+        if m.group("l2"):
+            header += " " + m.group("l2").strip()
+        cleaned_input = header.lower().strip()
+        if cleaned_input in CANONICAL_SECTION_NAMES and len(cleaned_input) <= HEADER_LIMIT:
+            end_index = m.end()
+            page_number = 0
+            for comp_end in end_indices:
+                page_number += 1
+                if comp_end <= end_index:
+                    for key in fallback_toc.keys():
+                        if key.lower() == cleaned_input:
+                            del fallback_toc[key]
+                            break
+                    fallback_toc[header] = f"~{page_number}"
+    if fallback_toc == {}:
+        print("[WARN] Secondary fallback failed. Using tertiary fallback...")
+        fallback_toc = ascii_toc_tertiary_fallback(raw_content)
+    return fallback_toc
+
+def ascii_toc_tertiary_fallback(raw_content):
+    matches = HEADER_RE.finditer(raw_content)
+    fallback_toc = {}
+    for m in matches:
+        header = m.group("l1").strip()
+        if m.group("l2"):
+            header += " " + m.group("l2").strip()
+        cleaned_input = header.lower().strip()
+        if cleaned_input in CANONICAL_SECTION_NAMES and len(cleaned_input) <= HEADER_LIMIT:
+            for key in fallback_toc.keys():
+                if key.lower() == cleaned_input:
+                    del fallback_toc[key]
+                    break
+            fallback_toc[header] = f"~{len(fallback_toc) + 1}"
+    if fallback_toc == {}:
+        print("[WARN] Tertiary fallback failed.")
+    return fallback_toc
 
 def parse_toc_1997(raw_content: str, use_fallback: bool = True):
     """Parse TOC from HTML for 1997-era filings."""
     toc = {}
-    soup = BeautifulSoup(raw_content, 'html.parser')
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
 
     toc_header = soup.find(lambda tag: tag.name in ['p', 'b', 'h1', 'h2', 'h3'] and 'table of contents' in tag.get_text(strip=True).lower())
     if toc_header:
@@ -1085,7 +1438,7 @@ def _attempt_parse_table_2004(toc_table) -> dict:
 
 def parse_toc_2004_2012(raw_content: str, use_fallback: bool = True):
     """Parse TOC from HTML for 2004-2012 era filings."""
-    soup = BeautifulSoup(raw_content, 'html.parser')
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
 
     # Extended keywords for marker detection
     toc_keywords = ['table of contents', 'index', 'contents']
@@ -1178,7 +1531,7 @@ def parse_toc_2019_2024(raw_content: str, use_fallback: bool = True):
     """Parse TOC from HTML for 2019-2024 era filings."""
     toc = {}
 
-    soup = BeautifulSoup(raw_content, 'html.parser')
+    soup = BeautifulSoup(raw_content, _BS_PARSER)
 
     toc_anchor = soup.find('a', attrs={'name': re.compile(r'toc', re.IGNORECASE)})
     toc_container = None
@@ -1235,15 +1588,19 @@ def parse_toc_2019_2024(raw_content: str, use_fallback: bool = True):
 def get_parser_for_year(year) -> Callable[[str], dict[str, str]]:
     """Return the appropriate parser function for a given year."""
     year = int(year)
-
-    if year >= 2015 and year <= 2025:
+    
+    if year == 2017:
+        return parse_toc_2017
+    elif year == 2018:
+        return parse_toc_2018
+    else:
         return parse_toc_2015_2025
     
-    if year < 2000:
-        return parse_toc_1997  # For 1997-1999
-    elif year < 2013:
-        return parse_toc_2004_2012  # For 2000-2012
-    elif year < 2019:
-        return parse_toc_2013_2018  # For 2013-2018
-    else:
-        return parse_toc_2019_2024
+    # if year < 2000:
+    #     return parse_toc_1997  # For 1997-1999
+    # elif year < 2013:
+    #     return parse_toc_2004_2012  # For 2000-2012
+    # elif year < 2019:
+    #     return parse_toc_2013_2018  # For 2013-2018
+    # else:
+    #     return parse_toc_2019_2024

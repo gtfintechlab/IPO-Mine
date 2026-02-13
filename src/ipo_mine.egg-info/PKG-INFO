@@ -1,150 +1,175 @@
 Metadata-Version: 2.4
 Name: ipo-mine
-Version: 0.0.0
+Version: 0.1.0
 Summary: Mining and parsing S-1 IPO filings
 Author: Michael Galarnyk
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: pandas>=1.5
 Requires-Dist: numpy>=1.21
 Requires-Dist: beautifulsoup4>=4.11
 Requires-Dist: lxml>=4.9
 Requires-Dist: requests>=2.28
-Requires-Dist: fuzzywuzzy>=0.18.0
+Requires-Dist: thefuzz>=0.19.0
 Requires-Dist: python-levenshtein
+Requires-Dist: openai>=1.0.0
+Requires-Dist: anthropic>=0.3.0
+Requires-Dist: google-genai>=0.1.0
+Requires-Dist: huggingface_hub>=0.17.0
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: jupyter; extra == "dev"
+Dynamic: license-file
 
-# IPO-Mine: S-1 (IPO) Filings Toolkit
+# IPO-Mine: A Toolkit and Dataset for Section-Structured Analysis of Long, Multimodal IPO Documents
 
-GitHub Repository: https://github.com/gtfintechlab/S1-Filings  
-Project Website: https://ipo-mine.web.app/
+[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)](https://huggingface.co/datasets/gtfintechlab/ipo-images) [![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/) [![CC BY 4.0][cc-by-shield]][cc-by]
 
-## Overview
+This work is licensed under a
+[Creative Commons Attribution 4.0 International License][cc-by].
 
-IPO-Mine is a Python package for downloading, parsing, and structuring S-1 IPO filings from the U.S. Securities and Exchange Commission (SEC) EDGAR system.
+## Dataset Construction Pipelines
+<table>
+    <tr>
+        <td>
+            Image Dataset Pipeline
+        </td>
+        <td>
+            Text Dataset Pipeline
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <img src="images/ipo-image-pipeline.png" alt="Description 1" width="300"/>
+        </td>
+        <td>
+            <img src="images/ipo-text-pipeline.png" alt="Description 2" width="300"/>
+        </td>
+    </tr>
+</table>
 
-This repository implements the data processing pipeline used to construct the IPO-Mine dataset, a section-structured corpus introduced in the research paper:
+## Quickstart
 
-IPO-Mine: A Section-Structured Dataset for Analyzing Long and Complex IPO Filings
+### Install from PyPI
 
-The objective of this project is to transform raw SEC filings into clean, standardized, and section-aligned textual representations suitable for large-scale analysis in natural language processing, information retrieval, and long-document modeling.
-
-## Motivation
-
-S-1 filings are among the most complex regulatory documents used in empirical research. They exhibit several challenges:
-
-- Extreme document length, often exceeding 100–300 pages
-- Substantial variation in section headers across firms and time
-- Heterogeneous formats, including HTML, plain text, and scanned images
-- Limited structural consistency despite regulatory guidance
-
-These characteristics complicate tasks such as section segmentation, cross-firm comparison, longitudinal analysis, and long-context modeling.
-
-IPO-Mine addresses these challenges by providing a unified and reproducible pipeline that converts raw EDGAR filings into structured, research-ready data.
-
-## Features
-
-- Automated downloading of S-1 and S-1/A filings from SEC EDGAR
-- Parsing of Tables of Contents (TOCs) for filings dating back to 1997
-- Extraction and normalization of key IPO sections, including:
-  - Risk Factors
-  - Business
-  - Use of Proceeds
-  - Management’s Discussion and Analysis (MD&A)
-  - Financial Statements
-- Support for multiple filing formats:
-  - HTML
-  - plain text
-  - image-based filings via OCR
-- Fuzzy matching of section headers using global section mappings
-- Deterministic outputs suitable for reproducible dataset construction
-
-## IPO-Mine Dataset
-
-Using this toolkit, the IPO-Mine dataset is constructed as a large-scale corpus of IPO filings with:
-
-- Section-aligned text across firms
-- Standardized section nomenclature
-- Clean document boundaries
-- Compatibility with long-document modeling and retrieval frameworks
-
-Additional details and examples are available at:
-
-https://ipo-mine.web.app/
-
-## Installation
-
-The package is available on PyPI under the name `ipo-mine`.
-
-```
+```bash
 pip install ipo-mine
 ```
 
-## OCR Dependency
+## CLI Usage
 
-Parsing image-based filings requires a local installation of Tesseract OCR.
+You can use the command-line interface to download and parse filings without writing Python code.
 
-### Tesseract Installation
+### Download
 
-| Operating System | Installation Method |
-|------------------|---------------------|
-| macOS | `brew install tesseract` |
-| Ubuntu / Debian | `sudo apt install tesseract-ocr` |
-| Windows | UB Mannheim Tesseract installer |
-| Conda environments | Included automatically |
+Download the latest S-1 filing for a company:
 
-## Example Usage
+```bash
+ipo-mine download SNOW --email your@email.com --org "Your Org"
+```
+
+Options:
+- `--limit N`: Download previous N filings (default: 1)
+- `--images`: Download and extract images from the filing
+- `--all`: Download all available IPO filings for the ticker
+
+### Parse
+
+Parse a downloaded filing into section-specific files:
+
+```bash
+ipo-mine parse SNOW
+```
+
+Options:
+- `--validate`: Enable LLM-based validation of extracted sections
+- `--provider`: LLM provider (anthropic, openai, google, huggingface)
+- `--mode`: Validation mode (binary, likert)
+
+### Validate
+
+Run LLM validation on existing parsed text files to check for truncation or completeness.
+
+```bash
+ipo-mine validate SNOW --provider anthropic
+```
+
+#### Supported Providers
+
+You can choose from the following providers (requires API keys):
+
+| Provider | Argument | Env Variable |
+| :--- | :--- | :--- |
+| **Anthropic** (Claude) | `--provider anthropic` | `ANTHROPIC_API_KEY` |
+| **OpenAI** (GPT-4o) | `--provider openai` | `OPENAI_API_KEY` |
+| **Google** (Gemini) | `--provider google` | `GOOGLE_API_KEY` |
+| **HuggingFace** | `--provider huggingface` | `HUGGINGFACE_API_KEY` |
+
+#### Validation Modes
+
+- **Binary (`--mode binary`)**: Returns "Yes" (Valid) or "No" (Truncated/Incomplete). Default.
+- **Likert (`--mode likert`)**: Returns a confidence score from 1 (Incomplete) to 5 (Complete).
+
+#### Authentication
+
+The CLI will look for API keys in this order:
+1.  **Command Line Argument**: `--api-key "sk-..."`
+2.  **Environment Variable**: e.g., `export OPENAI_API_KEY="sk-..."`
+3.  **Interactive Prompt**: If neither is found, the CLI will securely prompt you to enter the key (input is hidden).
+
+#### Examples
+
+**Validate using OpenAI with Likert scale:**
+```bash
+ipo-mine validate TSLA --provider openai --mode likert
+```
+
+**Validate using Google Gemini with explicit key:**
+```bash
+ipo-mine validate TSLA --provider google --api-key "your-api-key"
+```
+
+## Using `ipo-mine` to Download an IPO Filing (Python API)
 
 ```python
-from ipo_mine.download.company import Company
-from ipo_mine.download import S1Downloader
-from ipo_mine.parse.s1_parser import S1Parser
-from ipo_mine.resources import GLOBAL_SECTIONS_JSON
-from ipo_mine.utils.config import PARSED_DIR
+from download import IPODownloader, Company
 
-downloader = S1Downloader(
-    email="your_email@domain.com",
-    company="Your Institution"
+downloader = IPODownloader(
+    email="example@gmail.com",
+    company="Your Example Organization"
 )
 
-ticker = "SNOW"
-filing = downloader.download_s1(Company.from_ticker(ticker))
+company = Company.from_ticker("SNOW")
 
-parser = S1Parser(
-    filing=filing,
-    mappings_path=GLOBAL_SECTIONS_JSON,
-    output_base_path=PARSED_DIR
+company_filings = downloader.download_ipo(
+    company,
+    limit=1,
+    save_filing=True,
+    save_images=False,
+    verbose=True
 )
 
-risk_factors = parser.parse_section("Risk Factors", ticker)
+filing = company_filings.filings[0]
 ```
 
-## Research-Oriented Design
+## Parsing the  Table of Contents
 
-This library is designed primarily for dataset construction and reproducible empirical research rather than ad-hoc scraping.
-
-Typical use cases include:
-
-- Building section-aligned IPO corpora
-- Comparing disclosure language across firms and time
-- Training and evaluation of long-document language models
-- Large-scale studies of regulatory disclosures
-
-## Citation
-
-If you use this package or the IPO-Mine dataset in your research, please cite:
-
-```
-@inproceedings{ipomine2025,
-  title     = {IPO-Mine: A Section-Structured Dataset for Analyzing Long and Complex IPO Filings},
-  author    = {Author names},
-  booktitle = {Proceedings of the ACM SIGKDD Conference},
-  year      = {2025}
-}
+```python
+results = parser.parse_company(
+    ticker="SNOW",
+    validate=False
+)
 ```
 
-## License
+## Notes
 
-This project is released under the MIT License.
+- The SEC requires a descriptive User-Agent. Provide a real organization name and your email.
+- `download_ipo` returns a `CompanyFilings` object; use `company_filings.filings[0]` to pass a `Filing` into the parser.
+- The parser automatically chooses HTML or text parsing based on the filing URL.
+
+
+
+[cc-by]: http://creativecommons.org/licenses/by/4.0/
+[cc-by-image]: https://i.creativecommons.org/l/by/4.0/88x31.png
+[cc-by-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg
