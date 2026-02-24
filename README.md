@@ -17,10 +17,10 @@ This work is licensed under a
     </tr>
     <tr>
         <td>
-            <img src="images/ipo-image-pipeline.png" alt="Description 1" width="300"/>
+            <img src="https://raw.githubusercontent.com/gtfintechlab/IPO-Mine/main/images/ipo-image-pipeline.png" alt="Description 1" width="300"/>
         </td>
         <td>
-            <img src="images/ipo-text-pipeline.png" alt="Description 2" width="300"/>
+            <img src="https://raw.githubusercontent.com/gtfintechlab/IPO-Mine/main/images/ipo-text-pipeline.png" alt="Description 2" width="300"/>
         </td>
     </tr>
 </table>
