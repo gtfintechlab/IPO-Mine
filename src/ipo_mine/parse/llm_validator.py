@@ -12,7 +12,9 @@ import os
 from typing import Dict, Optional, Literal
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Literal
+
+from ipo_mine.parse.prompts import VALIDATION_PROMPT, LIKERT_PROMPT
+
 
 @dataclass
 class FilingMetadata:
@@ -22,7 +24,7 @@ class FilingMetadata:
     cik: Optional[str] = None
     filing_date: Optional[str] = None
     year: Optional[int] = None
-    
+
     def to_context_string(self) -> str:
         """Convert metadata to a formatted context string for LLM."""
         parts = []
@@ -37,6 +39,7 @@ class FilingMetadata:
         if self.year:
             parts.append(f"Year: {self.year}")
         return " | ".join(parts) if parts else ""
+
 
 @dataclass
 class ValidationExample:
@@ -93,86 +96,6 @@ class LikertValidationResult:
     justification: str
     raw_response: str
 
-
-# Prompts for validation
-
-VALIDATION_PROMPT = """Below is text extracted from the "{section_name}" section of an SEC S-1 filing.
-{metadata_context}
-
-Task:
-Determine whether this extraction appears STRUCTURALLY COMPLETE — i.e.,
-it does NOT appear to be truncated, cut off mid-thought, or prematurely ended.
-
-IMPORTANT:
-- Ignore whether unrelated, adjacent, or extraneous material appears.
-- Ignore whether the section seems "long enough" or "comprehensive".
-- Do NOT penalize the presence of other section content unless it proves truncation.
-
-Answer "No" ONLY if you observe clear evidence of truncation, such as:
-1. Text ends mid-sentence or mid-clause (e.g., "the Company will", "as described in")
-2. An unfinished cross-reference (e.g., "See", "as discussed in Section" with no continuation)
-3. Explicit continuation markers ("[continued]", "continued on next page")
-4. The text is extremely short and contains almost no substantive content
-
-If none of the above are present, answer "Yes".
-If the answer is "No," clearly justify your answer by providing the exact sentences that are truncated.
-
-{examples}
-
-Now evaluate the following extracted text using the same criteria demonstrated in the examples above:
-{parsed_text}
-
-Respond ONLY with valid JSON in the following format:
-{{
-  "Answer": "Yes" or "No",
-  "Justification": "Brief explanation citing specific textual evidence"
-}}
-"""
-
-LIKERT_PROMPT = """Below is text extracted from the "{section_name}" section of an SEC S-1 filing.
-{metadata_context}
-
-Task:
-Rate your confidence that this extraction is NOT truncated or prematurely cut off.
-
-Ignore:
-- Whether the content matches modern expectations
-- Whether unrelated or adjacent section material appears
-- Whether the section feels "complete" thematically
-
-Use this 5-point scale:
-
-5 = Very High Confidence (Structurally Complete)
-    - No evidence of truncation
-    - Text ends naturally (even if abruptly)
-    - May contain other section material or administrative text
-
-4 = High Confidence (Likely Complete)
-    - Minor ambiguity, but no concrete truncation signals
-
-3 = Moderate Confidence (Uncertain)
-    - Some ambiguity (e.g., odd ending), but no direct truncation evidence
-
-2 = Low Confidence (Likely Incomplete)
-    - Strong signs of cutoff or missing continuation
-
-1 = Very Low Confidence (Clearly Incomplete)
-    - Definite mid-sentence cutoff or explicit continuation marker
-
-IMPORTANT:
-- For historical filings, assign 5 unless there is direct textual evidence of truncation.
-
-{examples}
-
-Now rate the following extracted text using the same criteria and scale demonstrated in the examples above:
-{parsed_text}
-
-Respond ONLY with valid JSON in the following format:
-{{
-  "Answer": 1-5,
-  "Justification": "Brief explanation citing specific textual evidence"
-}}
-"""
 
 def load_example_sections(file_paths: list[tuple[str, bool, str, str, int]]) -> list[ValidationExample]:
     """
