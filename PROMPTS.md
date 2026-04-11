@@ -105,27 +105,3 @@ Respond ONLY with valid JSON in the following format:
 **Note:**
 - The placeholders `{section_name}`, `{metadata_context}`, `{examples}`, and `{parsed_text}` are dynamically filled during runtime.
 
----
-
-## 3. Table Detection Prompt (Planned)
-
-**Purpose:**
-Ask the model to determine if an image contains a table ("Is it a table?").
-
-**Prompt:**
-
-```
-You are given an image extracted from an SEC S-1 filing.
-
-Task:
-Determine whether the image contains a table (i.e., a structured grid of rows and columns with data or text, as typically found in financial or tabular reports).
-
-Answer "Yes" if the image clearly depicts a table, even if the table is partially cut off or contains additional elements.
-Answer "No" if the image does not contain a table, or if it is ambiguous, illegible, or contains only charts, figures, or text blocks without a tabular structure.
-
-Respond ONLY with valid JSON in the following format:
-{
-    "Answer": "Yes" or "No",
-    "Justification": "Brief explanation citing specific visual evidence"
-}
-```
