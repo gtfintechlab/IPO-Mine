@@ -1,6 +1,9 @@
 # IPO-Mine: A Toolkit and Dataset for Section-Structured Analysis of Long, Multimodal IPO Documents
 
-[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)](https://huggingface.co/datasets/gtfintechlab/ipo-images) [![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/) [![CC BY 4.0][cc-by-shield]][cc-by]
+[![Paper](https://img.shields.io/badge/arXiv-2605.28714-b31b1b.svg)](https://arxiv.org/abs/2605.28714)
+[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)](https://huggingface.co/datasets/gtfintechlab/ipo-images)
+[![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/)
+[![CC BY 4.0][cc-by-shield]][cc-by]
 
 This work is licensed under a
 [Creative Commons Attribution 4.0 International License][cc-by].
@@ -144,8 +147,22 @@ ipo-mine validate TSLA --provider google --api-key "your-api-key"
 - `download_ipo` returns a `CompanyFilings` object; use `company_filings.filings[0]` to pass a `Filing` into the parser.
 - The parser automatically chooses HTML or text parsing based on the filing URL.
 
-
-
 [cc-by]: http://creativecommons.org/licenses/by/4.0/
 [cc-by-image]: https://i.creativecommons.org/l/by/4.0/88x31.png
 [cc-by-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg
+
+## Citation
+
+If you use IPO-Mine, please cite:
+
+```bibtex
+@misc{galarnyk2026ipominetoolkitdatasetsectionstructured,
+      title={IPO-Mine: A Toolkit and Dataset for Section-Structured Analysis of Long, Multimodal IPO Documents}, 
+      author={Michael Galarnyk and Siddharth Lohani and Vidhyakshaya Kannan and Sagnik Nandi and Aman Patel and Liqin Ye and Arnav Hiray and Rutwik Routu and Prasun Banerjee and Siddhartha Somani and Sudheer Chava},
+      year={2026},
+      eprint={2605.28714},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2605.28714}, 
+}
+```
