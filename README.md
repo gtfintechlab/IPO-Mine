@@ -1,12 +1,9 @@
 # IPO-Mine: A Toolkit and Dataset for Section-Structured Analysis of Long, Multimodal IPO Documents
 
+[![YouTube](https://img.shields.io/badge/YouTube-Video-red?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=Qs17Ta40JEY)
 [![Paper](https://img.shields.io/badge/arXiv-2605.28714-b31b1b.svg)](https://arxiv.org/abs/2605.28714)
-[![Dataset on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg)](https://huggingface.co/datasets/gtfintechlab/ipo-images)
+[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/gtfintechlab/ipo-images)
 [![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/)
-[![CC BY 4.0][cc-by-shield]][cc-by]
-
-This work is licensed under a
-[Creative Commons Attribution 4.0 International License][cc-by].
 
 ## Dataset Construction Pipelines
 <table>
