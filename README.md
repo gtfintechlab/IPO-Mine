@@ -2,7 +2,7 @@
 
 [![YouTube](https://img.shields.io/badge/YouTube-Video-red?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=Qs17Ta40JEY)
 [![Paper](https://img.shields.io/badge/arXiv-2605.28714-b31b1b.svg)](https://arxiv.org/abs/2605.28714)
-[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/gtfintechlab/ipo-images)
+[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow?logo=huggingface)](https://huggingface.co/collections/gtfintechlab/ipo-mine)
 [![PyPI - ipo-mine](https://img.shields.io/pypi/v/ipo-mine.svg)](https://pypi.org/project/ipo-mine/)
 
 ## Dataset Construction Pipelines
